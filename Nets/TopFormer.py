@@ -148,7 +148,7 @@ class MultiHeadAttention(nn.Module):
         attention_weight = f.softmax(attention_score*self.scale_factor, dim=-1)
 
         # 第五步，计算将每个注意力汇聚concat后的输出
-        out = torch.einsum("bhqk, bkhd -> bhqd", [attention_weight, cat_V])
+        out = torch.einsum("bhqk, bkhd -> bhqd", [attention_weight, cat_V]).to('cuda:0')
         out = out.reshape(batch_size, T, self.heads*d)
 
         # 第六步，通过全连接层得到输出
@@ -176,8 +176,8 @@ class TokenPyramidModule(nn.Module):
     def __init__(self):
         super(TokenPyramidModule, self).__init__()
 
-        # 预处理，将3通道的图像转化为32通道
-        self.Preprocess = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=1)
+        # 预处理，降维
+        self.Preprocess = nn.AvgPool2d(kernel_size=3, stride=4, padding=1)
 
         # Pooling层，数字代表第几层的Pooling
         self.Pool1 = nn.AvgPool2d(kernel_size=7, stride=16, padding=1)
@@ -185,11 +185,11 @@ class TokenPyramidModule(nn.Module):
         self.Pool3 = nn.AvgPool2d(kernel_size=2, stride=4, padding=0)
 
         # 利用卷积层进行下采样
-        self.Conv1 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=4, padding=1)
+        self.Conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, stride=1, padding=1)
         self.Conv2 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1)
         self.Conv3 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1)
-        self.Conv4 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)
-        self.Conv5 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=2, padding=1)
+        self.Conv4 = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=2, padding=1)
+        self.Conv5 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=2, padding=1)
 
     def forward(self, x):
         """
@@ -210,7 +210,6 @@ class TokenPyramidModule(nn.Module):
         feature4 = conv5
 
         feature = torch.cat((feature1, feature2, feature3, feature4), dim=1)
-        channels = [feature1.shape[1], feature2.shape[1], feature3.shape[1], feature4.shape[1]]
         local_tokens = [conv1, conv2, conv3, conv4]
 
         return feature, local_tokens
@@ -315,13 +314,15 @@ class TopFormer(nn.Module):
     def __init__(self, feature_shape):
         super(TopFormer, self).__init__()
 
+        assert isinstance(feature_shape, tuple)  # feature_shape must be a tuple composed by 2 elements
+
         assert feature_shape[0] % 64 == 0
         assert feature_shape[1] % 64 == 0
 
         self.input_size = (feature_shape[0] // 64) * (feature_shape[1] // 64)
         self.heads = feature_shape[0] // 64
         self.L = 3
-        self.channels = [64, 128, 256, 256]
+        self.channels = [64, 128, 256, 512]
 
         self.Top = TokenPyramidModule()
         self.Former = Former(input_size=self.input_size, heads=self.heads, L=self.L)
@@ -333,7 +334,7 @@ class TopFormer(nn.Module):
 
         self.SegeHead = SegeHead()
 
-    def forward(self, x):
+    def forward(self, x, option=None):
         features, local_tokens = self.Top(x)
         global_semantics = self.Former(features)
 

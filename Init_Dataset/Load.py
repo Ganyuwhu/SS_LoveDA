@@ -18,6 +18,7 @@ from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets import ImageFolder
 from PIL import Image
+from Nets import Precision
 
 
 # 获取transform
@@ -97,14 +98,14 @@ class LoveDA_Dataset(Dataset):
 
 
 # 创建数据集
-def get_dataset(image_root_dir, mask_root_dir, batch_size=64, transform=None):
+def get_dataset(image_root_dir, mask_root_dir, batch_size=64, transform=None, shuffle=True):
     dataset = LoveDA_Dataset(image_root_dir, mask_root_dir, transform)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
     return dataset, loader
 
 
-# 验证网络并将生成的语义分割图存储在其他文件夹中
+# 验证网络并将生成的语义分割图存储在其他文件夹中，并获取评价指标
 def get_segmentation(model, data_loader, save_dir, color_map, option):
     """
     :param model: 模型
